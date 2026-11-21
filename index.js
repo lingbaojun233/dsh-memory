@@ -57,7 +57,14 @@ function currentCounterpart() {
   return raw ? raw.slice(0, 60) : null;
 }
 
-async function postJson(url, body, timeoutMs = REQUEST_TIMEOUT_MS) {
+// Node 20+ 才有 AbortSignal.any；更老的运行时退化为只有本地超时，
+// 这样插件仍然只依赖 Node 内置能力（package.json 的 engines 是 >=18）。
+function withOuterSignal(local, outer) {
+  if (!outer) return local;
+  return typeof AbortSignal.any === 'function' ? AbortSignal.any([local, outer]) : local;
+}
+
+async function postJson(url, body, timeoutMs = REQUEST_TIMEOUT_MS, outerSignal) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -65,7 +72,7 @@ async function postJson(url, body, timeoutMs = REQUEST_TIMEOUT_MS) {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
-      signal: controller.signal,
+      signal: withOuterSignal(controller.signal, outerSignal),
     });
     const text = await res.text();
     try {
@@ -85,9 +92,9 @@ const textBlock = (value) => [
 
 // 工具失败不抛异常：DSH 会把抛出的错误变成一条难读的调用失败，
 // 而模型需要看到 ok:false + hint 才能自己改参数或提示用户启动服务。
-async function callMemory(memoryUrl, route, body) {
+async function callMemory(memoryUrl, route, body, outerSignal) {
   try {
-    const { status, data } = await postJson(`${memoryUrl}${route}`, body);
+    const { status, data } = await postJson(`${memoryUrl}${route}`, body, REQUEST_TIMEOUT_MS, outerSignal);
     if (status >= 400) {
       return {
         ok: false,
@@ -100,6 +107,11 @@ async function callMemory(memoryUrl, route, body) {
     return data;
   } catch (err) {
     const aborted = err && err.name === 'AbortError';
+    // 宿主取消（用户打断 / 工具超时策略）和服务不可达是两回事：
+    // 报成 UNREACHABLE 会让模型去重启一个其实健康的后端。
+    if (outerSignal && outerSignal.aborted) {
+      return { ok: false, code: 'ABORTED', message: 'the caller cancelled this tool call' };
+    }
     return {
       ok: false,
       code: aborted ? 'TIMEOUT' : 'UNREACHABLE',
@@ -138,7 +150,11 @@ export function apply(ctx, config) {
       schema: { type: 'object' },
       render: (_args, value) => textBlock(value),
     },
-    async execute(args) {
+    // 宿主侧协作超时：比本地 15s 多留 1s，让本地先给出 REQUEST_TIMEOUT_MS 的明细。
+    timeoutMs: REQUEST_TIMEOUT_MS + 1000,
+    // 只读检索，可以和同一轮的其它工具并行。
+    isConcurrencySafe: () => true,
+    async execute(args, exec) {
       const uid = readUserId();
       if (!uid.ok) return uid.error;
       return callMemory(memoryUrl, '/v1/tools/memory_search', {
@@ -149,7 +165,7 @@ export function apply(ctx, config) {
           max_items: args.max_items || 8,
           max_tokens: args.max_tokens || 1200,
         },
-      });
+      }, exec && exec.signal);
     },
   });
 
@@ -173,7 +189,8 @@ export function apply(ctx, config) {
       schema: { type: 'object' },
       render: (_args, value) => textBlock(value),
     },
-    async execute(args) {
+    timeoutMs: REQUEST_TIMEOUT_MS + 1000,
+    async execute(args, exec) {
       const uid = readUserId();
       if (!uid.ok) return uid.error;
       return callMemory(memoryUrl, '/v1/tools/memory_remember', {
@@ -185,7 +202,7 @@ export function apply(ctx, config) {
         speaker_name: args.speaker,
         salience: args.salience,
         channel: 'chat',
-      });
+      }, exec && exec.signal);
     },
   });
 
@@ -208,7 +225,8 @@ export function apply(ctx, config) {
       schema: { type: 'object' },
       render: (_args, value) => textBlock(value),
     },
-    async execute(args) {
+    timeoutMs: REQUEST_TIMEOUT_MS + 1000,
+    async execute(args, exec) {
       return callMemory(memoryUrl, '/v1/tools/memory_forget', {
         id: args.id,
         reason: args.reason,
@@ -216,7 +234,7 @@ export function apply(ctx, config) {
         // 服务端撤销时优先读 tombstoneId；两个名字都带上，兼容旧版本
         tombstoneId: args.tombstone_id,
         tombstone_id: args.tombstone_id,
-      });
+      }, exec && exec.signal);
     },
   });
 
