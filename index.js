@@ -124,13 +124,12 @@ export function apply(ctx, config) {
   register({
     name: 'memory_search',
     description:
-      'Recall memories from past sessions under a strict count+token budget. Every item carries an evidence locator. Returns empty when nothing matches — never invent.',
+      'Recall past memories under a count+token budget; each hit carries an evidence locator. Empty means nothing matched — never invent.',
     parameters: {
       type: 'object',
-      additionalProperties: false,
       required: ['query'],
       properties: {
-        query: { type: 'string', description: 'Natural language or keywords' },
+        query: { type: 'string' },
         max_items: { type: 'integer', minimum: 1, maximum: 32, description: 'Default 8' },
         max_tokens: { type: 'integer', minimum: 50, maximum: 4000, description: 'Default 1200' },
       },
@@ -158,13 +157,12 @@ export function apply(ctx, config) {
   register({
     name: 'memory_remember',
     description:
-      'Persist one event. Evidence is mandatory: "source:locator" such as chat:g123#m456. Chat-chatter and duplicates are rejected with a reason.',
+      'Persist one event. Evidence is mandatory as source:locator (e.g. chat:g123#m456); chatter and duplicates are rejected with a reason.',
     parameters: {
       type: 'object',
-      additionalProperties: false,
       required: ['content', 'evidence'],
       properties: {
-        content: { type: 'string', description: 'What was said or done' },
+        content: { type: 'string' },
         evidence: { type: 'string', description: 'source:locator' },
         kind: { type: 'string', enum: ['msg', 'video', 'action', 'commitment'] },
         speaker: { type: 'string' },
@@ -195,10 +193,9 @@ export function apply(ctx, config) {
   register({
     name: 'memory_forget',
     description:
-      'Soft-delete one memory (event:<id>). It becomes unsearchable immediately, is audited, and can be undone with {undo:true, tombstone_id}.',
+      'Soft-delete one memory (event:<id>): unsearchable at once, audited, undoable with {undo:true, tombstone_id}.',
     parameters: {
       type: 'object',
-      additionalProperties: false,
       required: ['id'],
       properties: {
         id: { type: 'string', description: 'event:123 or 123' },
