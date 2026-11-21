@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "记忆工具",
+    "description": "把 memory_search / memory_remember / memory_forget 注册为 DSH 原生工具，后端是本地或远程的记忆服务（兼容 DSH-MultiTool memory API）。"
+  }
+}

@@ -1,0 +1,14 @@
+# 依赖与产物
+node_modules/
+*.tgz
+
+# 运行时
+*.log
+.env
+.env.*
+
+# 编辑器 / 系统
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

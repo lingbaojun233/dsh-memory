@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Memory tools",
+    "description": "Exposes memory_search, memory_remember and memory_forget as native DSH tools backed by a local or remote memory service (DSH-MultiTool compatible API)."
+  }
+}
